@@ -1,19 +1,32 @@
 #include "../../include/motor_rpm.h"
 #include "../../include/utils.h"
+#include "soc/rtc_wdt.h"
 #include "driver/gpio.h"
 
 #define TAG "motor_rpm"
 
 #define MOTOR_RPM_PIN 14
 #define MOTOR_PULSES_TO_RPM 2
+#define FREQUENCY_IN_MILLIS 60000
 
 SemaphoreHandle_t motor_rpm_sem;
 
 gpio_config_t motor_rpm_gpio_config;
 
+TickType_t countTicks = 0;
+
+uint64_t periods[2] = {0 , 0};
+int period_diff = 0;
+uint64_t rpm = 0;
+
 static void IRAM_ATTR motor_rpm_interrupt_handler(void *args)
 {
-    xSemaphoreGiveFromISR(motor_rpm_sem, pdFALSE);
+    static BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    countTicks = xTaskGetTickCountFromISR();
+    xSemaphoreGiveFromISR(motor_rpm_sem, xHigherPriorityTaskWoken);
+    if(xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 static void set_gpio_motor_rpm() 
@@ -36,7 +49,16 @@ void motor_rpm_init(void *p1)
 
     while (true) {
         xSemaphoreTake(motor_rpm_sem, portMAX_DELAY);
+        periods[0] =  pdTICKS_TO_MS(countTicks);
         xSemaphoreTake(motor_rpm_sem, portMAX_DELAY);
+        periods[1] = pdTICKS_TO_MS(countTicks);
+        period_diff = periods[1] - periods[0];
+        if(period_diff != 0 ) {
+            rpm = FREQUENCY_IN_MILLIS/period_diff;
+            ESP_LOGI(TAG, "period %d ms rpm %llu", period_diff, rpm);
+        } else {
+            ESP_LOGE(TAG, "ERROR");
+        }
     }
 
     error:
