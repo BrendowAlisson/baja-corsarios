@@ -1,5 +1,6 @@
 #include "../../include/motor_rpm.h"
 #include "../../include/utils.h"
+#include "freertos/ringbuf.h"
 #include "soc/rtc_wdt.h"
 #include "driver/gpio.h"
 
@@ -17,13 +18,13 @@ TickType_t countTicks = 0;
 
 uint64_t periods[2] = {0 , 0};
 int period_diff = 0;
-uint64_t rpm = 0;
+uint16_t rpm = 0;
 
 static void IRAM_ATTR motor_rpm_interrupt_handler(void *args)
 {
     static BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     countTicks = xTaskGetTickCountFromISR();
-    xSemaphoreGiveFromISR(motor_rpm_sem, xHigherPriorityTaskWoken);
+    xSemaphoreGiveFromISR(motor_rpm_sem, pdFALSE);
     if(xHigherPriorityTaskWoken) {
         portYIELD_FROM_ISR();
     }
@@ -38,8 +39,8 @@ static void set_gpio_motor_rpm()
 
 void motor_rpm_init(void *p1) 
 {
-    ARGUNSED(p1);
     ESP_LOGI(TAG, "Starting the rpm motor thread...");
+    RingbufHandle_t *buf_motorRPM = (RingbufHandle_t *) p1;
     set_gpio_motor_rpm();
 
     motor_rpm_sem = xSemaphoreCreateCounting(MOTOR_PULSES_TO_RPM, 0);
@@ -55,7 +56,11 @@ void motor_rpm_init(void *p1)
         period_diff = periods[1] - periods[0];
         if(period_diff != 0 ) {
             rpm = FREQUENCY_IN_MILLIS/period_diff;
-            ESP_LOGI(TAG, "period %d ms rpm %llu", period_diff, rpm);
+            ESP_LOGI(TAG, "period %d ms rpm %u", period_diff, rpm);
+            UBaseType_t rc =  xRingbufferSend(*buf_motorRPM, &rpm, sizeof(rpm), pdMS_TO_TICKS(1));
+            if (rc != pdTRUE) {
+                printf("Failed to send item\n");
+            }
         } else {
             ESP_LOGE(TAG, "ERROR");
         }

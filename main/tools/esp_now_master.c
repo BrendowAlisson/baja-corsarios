@@ -1,5 +1,7 @@
 #include "../../include/esp_now_tool.h"
 #include "../../include/wifi_init.h"
+#include "../include/utils.h"
+#include "freertos/ringbuf.h"
 #include "esp_crc.h"
 #include <stdlib.h>
 #include <time.h>
@@ -33,7 +35,7 @@ static void esp_now_send_callback(const uint8_t *mac_addr, esp_now_send_status_t
 }
 
 /* Prepare ESPNOW data to be sent. */
-void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param)
+void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param, uint16_t *payload)
 {
     esp_now_data_t *buf = (esp_now_data_t *)send_param->buffer;
 
@@ -42,7 +44,7 @@ void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param)
     buf->state = send_param->state;
     buf->crc = 0;
     buf->magic = send_param->magic;
-    buf->payload[0] = 27;
+    buf->payload[0] = *payload;
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
@@ -101,26 +103,27 @@ void esp_now_master_init(void *p1)
 {
     esp_now_send_param_t *send_param = malloc(sizeof(esp_now_send_param_t));
     esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
+    RingbufHandle_t *buf_motorRPM = (RingbufHandle_t *) p1;
+    size_t item_size;
     esp_now_event_t evt;
+    uint16_t *payload;
 
     wifi_init();
     esp_now_initialize();
     set_peer_esp_now(peer);
     set_parameters_esp_now(send_param);
 
-    vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
     send_message_esp_now(send_param);
 
     while (xQueueReceive(esp_now_queue, &evt, portMAX_DELAY) == pdTRUE) {
         esp_now_event_send_cb_t *send_cb = &evt.info.send_cb;
-        if (send_param->delay > 0) {
-            vTaskDelay(send_param->delay/portTICK_RATE_MS);
-        }
-        ESP_LOGI(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
         memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
-        prepare_data_to_send_esp_now(send_param);
+        payload = (uint16_t *)xRingbufferReceive(*buf_motorRPM, &item_size, portMAX_DELAY);
+        ESP_LOGI(TAG, "send data %u to "MACSTR"", *payload, MAC2STR(send_cb->mac_addr));
+        prepare_data_to_send_esp_now(send_param, payload);
         send_message_esp_now(send_param);
+        vRingbufferReturnItem(*buf_motorRPM, (void *) payload);
     }
     vTaskDelay(portMAX_DELAY);
 }
