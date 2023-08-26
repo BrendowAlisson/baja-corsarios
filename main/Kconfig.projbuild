@@ -58,12 +58,16 @@ menu "Example Configuration"
         help
             When enable long range, the PHY rate of ESP32 will be 512Kbps or 256Kbps
 
-    config ESPNOW_MASTER_MODE
-        bool "Set ESP32 to Master"
+    config ESPNOW_SENDER_MODE
+        bool "Set ESP32 to send data"
         default "y"
 
-    config ESPNOW_SLAVE_MODE
-        bool "Set ESP32 to Slave"
+    config ESPNOW_RECEIVER_MODE
+        bool "Set ESP32 to receive data"
         default "n"
+
+    config ESPNOW_TESTER_MODE
+        bool "Set ESP32 to test mode"
+        depends on ESPNOW_RECEIVER_MODE
 
 endmenu

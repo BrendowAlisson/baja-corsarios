@@ -7,7 +7,7 @@
 #include <assert.h>
 #include <string.h>
 
-#define TAG "esp_now_slave"
+#define TAG "esp_now_receiver"
 
 #define ESPNOW_MAXDELAY 512
 
@@ -37,7 +37,7 @@ static void esp_now_receive_callback(const uint8_t *mac_addr, const uint8_t *dat
     }
 }
 
-int esp_now_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint8_t *rpm, int *magic)
+int esp_now_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, char *payload, int *magic)
 {
     esp_now_data_t *buf = (esp_now_data_t *)data;
     uint16_t crc, crc_cal = 0;
@@ -49,7 +49,7 @@ int esp_now_data_parse(uint8_t *data, uint16_t data_len, uint8_t *state, uint8_t
 
     *state = buf->state;
     *magic = buf->magic;
-    *rpm = buf->payload[0];
+    strcpy(payload, buf->payload);
     crc = buf->crc;
     buf->crc = 0;
     crc_cal = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, data_len);
@@ -88,25 +88,25 @@ static esp_err_t esp_now_initialize()
     return ESP_OK;
 }
 
-void esp_now_slave_init(void *p1)
+void esp_now_receiver_init(void *p1)
 {
+    ARGUNSED(p1);
     esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
     esp_now_event_t evt;
 
-    uint8_t rpm = 0;
-    uint8_t recv_state = 0;
+    char payload[20];
+    uint8_t recv_state = 0U;
     int recv_magic = 0;
 
     wifi_init();
     esp_now_initialize();
-    vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "Start receiving broadcast data");
 
     while (xQueueReceive(esp_now_queue, &evt, portMAX_DELAY) == pdTRUE) {
         esp_now_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
-        esp_now_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, &rpm, &recv_magic);
+        esp_now_data_parse(recv_cb->data, recv_cb->data_len, &recv_state, payload, &recv_magic);
         free(recv_cb->data);
-        ESP_LOGI(TAG, "Receive %d from: "MACSTR", len: %d", rpm, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
+        ESP_LOGI(TAG, "Receive '%s' from: "MACSTR", len: %d", payload, MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
 
         if (esp_now_is_peer_exist(recv_cb->mac_addr) == false) {
             set_peer_esp_now(peer, recv_cb);

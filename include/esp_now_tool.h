@@ -49,7 +49,7 @@ typedef struct {
     uint8_t state;                        //Indicate that if has received broadcast ESPNOW data or not.
     uint16_t crc;                         //CRC16 value of ESPNOW data.
     uint32_t magic;                       //Magic number which is used to determine which device to send unicast ESPNOW data.
-    uint16_t payload[0];                   //Real payload of ESPNOW data.
+    char payload[20];                     //Real payload of ESPNOW data.;
 } __attribute__((packed)) esp_now_data_t;
 
 /* Parameters of sending ESPNOW data. */
@@ -65,11 +65,11 @@ typedef struct {
     uint8_t dest_mac[ESP_NOW_ETH_ALEN];   //MAC address of destination device.
 } esp_now_send_param_t;
 
-#ifdef CONFIG_ESPNOW_MASTER_MODE
-void esp_now_master_init(void *p1);
+#ifdef CONFIG_ESPNOW_SENDER_MODE
+void esp_now_sender_init(void *p1);
 #endif
-#ifdef CONFIG_ESPNOW_SLAVE_MODE
-void esp_now_slave_init(void *p1);
+#ifdef CONFIG_ESPNOW_RECEIVER_MODE
+void esp_now_receiver_init(void *p1);
 #endif
 
 #endif /* ESP_NOW_LOCAL_H */

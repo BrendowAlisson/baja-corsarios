@@ -6,19 +6,18 @@
 
 #define TAG "motor_rpm"
 
-#define MOTOR_RPM_PIN 14
+#define MOTOR_RPM_PIN 22
 #define MOTOR_PULSES_TO_RPM 2
-#define FREQUENCY_IN_MILLIS 60000
 
 SemaphoreHandle_t motor_rpm_sem;
 
 gpio_config_t motor_rpm_gpio_config;
 
-TickType_t countTicks = 0;
+static TickType_t countTicks = 0;
 
-uint64_t periods[2] = {0 , 0};
-int period_diff = 0;
-uint16_t rpm = 0;
+static uint64_t periods[2] = {0U , 0U};
+static int period_diff = 0;
+static float rpm = 0.0f;
 
 static void IRAM_ATTR motor_rpm_interrupt_handler(void *args)
 {
@@ -40,8 +39,9 @@ static void set_gpio_motor_rpm()
 void motor_rpm_init(void *p1) 
 {
     ESP_LOGI(TAG, "Starting the rpm motor thread...");
-    RingbufHandle_t *buf_motorRPM = (RingbufHandle_t *) p1;
+    RingbufHandle_t *ring_buf = (RingbufHandle_t *) p1;
     set_gpio_motor_rpm();
+    char payload[20];
 
     motor_rpm_sem = xSemaphoreCreateCounting(MOTOR_PULSES_TO_RPM, 0);
     if (motor_rpm_sem == NULL) {
@@ -55,9 +55,10 @@ void motor_rpm_init(void *p1)
         periods[1] = pdTICKS_TO_MS(countTicks);
         period_diff = periods[1] - periods[0];
         if(period_diff != 0 ) {
-            rpm = FREQUENCY_IN_MILLIS/period_diff;
-            ESP_LOGI(TAG, "period %d ms rpm %u", period_diff, rpm);
-            UBaseType_t rc =  xRingbufferSend(*buf_motorRPM, &rpm, sizeof(rpm), pdMS_TO_TICKS(1));
+            rpm = (float)(((float)(FREQUENCY_IN_MILLIS))/period_diff);
+            ESP_LOGI(TAG, "period %d ms rpm %f", period_diff, rpm);
+            sprintf(payload, "rpm: %.5f", rpm);
+            UBaseType_t rc =  xRingbufferSend(*ring_buf, &payload, sizeof(payload), pdMS_TO_TICKS(1));
             if (rc != pdTRUE) {
                 printf("Failed to send item\n");
             }

@@ -1,7 +1,6 @@
 #include "../../include/esp_now_tool.h"
 #include "../../include/wifi_init.h"
 #include "../include/utils.h"
-#include "freertos/ringbuf.h"
 #include "esp_crc.h"
 #include <stdlib.h>
 #include <time.h>
@@ -9,7 +8,7 @@
 #include <assert.h>
 #include <string.h>
 
-#define TAG "esp_now_master"
+#define TAG "esp_now_sender"
 
 #define ESPNOW_MAXDELAY 512
 
@@ -35,7 +34,7 @@ static void esp_now_send_callback(const uint8_t *mac_addr, esp_now_send_status_t
 }
 
 /* Prepare ESPNOW data to be sent. */
-void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param, uint16_t *payload)
+void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param, char *payload)
 {
     esp_now_data_t *buf = (esp_now_data_t *)send_param->buffer;
 
@@ -44,7 +43,7 @@ void prepare_data_to_send_esp_now(esp_now_send_param_t *send_param, uint16_t *pa
     buf->state = send_param->state;
     buf->crc = 0;
     buf->magic = send_param->magic;
-    buf->payload[0] = *payload;
+    strcpy(buf->payload, payload);
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
@@ -68,8 +67,8 @@ static void set_parameters_esp_now(esp_now_send_param_t *parameters)
     parameters->magic = esp_random();
     parameters->count = CONFIG_ESPNOW_SEND_COUNT;
     parameters->delay = CONFIG_ESPNOW_SEND_DELAY;
-    parameters->len = CONFIG_ESPNOW_SEND_LEN;
-    parameters->buffer = malloc(CONFIG_ESPNOW_SEND_LEN);
+    parameters->len = sizeof(esp_now_data_t);
+    parameters->buffer = malloc(sizeof(esp_now_data_t));
     memcpy(parameters->dest_mac, broadcast_mac, ESP_NOW_ETH_ALEN);
 }
 
@@ -99,14 +98,14 @@ void send_message_esp_now(esp_now_send_param_t *send_param)
     }
 }
 
-void esp_now_master_init(void *p1)
+void esp_now_sender_init(void *p1)
 {
     esp_now_send_param_t *send_param = malloc(sizeof(esp_now_send_param_t));
     esp_now_peer_info_t *peer = malloc(sizeof(esp_now_peer_info_t));
-    RingbufHandle_t *buf_motorRPM = (RingbufHandle_t *) p1;
+    RingbufHandle_t *ring_buffer = (RingbufHandle_t *) p1;
     size_t item_size;
     esp_now_event_t evt;
-    uint16_t *payload;
+    char *payload;
 
     wifi_init();
     esp_now_initialize();
@@ -119,11 +118,11 @@ void esp_now_master_init(void *p1)
     while (xQueueReceive(esp_now_queue, &evt, portMAX_DELAY) == pdTRUE) {
         esp_now_event_send_cb_t *send_cb = &evt.info.send_cb;
         memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
-        payload = (uint16_t *)xRingbufferReceive(*buf_motorRPM, &item_size, portMAX_DELAY);
-        ESP_LOGI(TAG, "send data %u to "MACSTR"", *payload, MAC2STR(send_cb->mac_addr));
+        payload = (char *)xRingbufferReceive(*ring_buffer, &item_size, portMAX_DELAY);
+        ESP_LOGI(TAG, "send data '%s' to "MACSTR"", payload, MAC2STR(send_cb->mac_addr));
         prepare_data_to_send_esp_now(send_param, payload);
         send_message_esp_now(send_param);
-        vRingbufferReturnItem(*buf_motorRPM, (void *) payload);
+        vRingbufferReturnItem(*ring_buffer, (void *) payload);
     }
     vTaskDelay(portMAX_DELAY);
 }
